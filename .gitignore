@@ -1,6 +1,19 @@
+# Secrets – never commit these
 .env
-.env.example
 .env.local
 .env.staging
 
-.txt
+# Telethon session files
+*.session
+*.session-journal
+
+# Generated output files
+group_ids.txt
+bot.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
