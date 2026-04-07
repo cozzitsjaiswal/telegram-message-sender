@@ -14,7 +14,7 @@
 All "testing" is done manually by running the GUI application:
 
 | Feature | Manual Test Approach |
-|---------|---------------------|
+| ------- | -------------------- |
 | Account login | Add account → click Login → enter OTP → verify ✅ Connected status |
 | Group search | Discovery tab → enter keyword → click Search → verify table populated |
 | Group join | Select rows → click Join → observe row color change (green/red) |
@@ -23,7 +23,7 @@ All "testing" is done manually by running the GUI application:
 
 ## Where Tests Should Go (If Added)
 
-```
+```text
 tests/
 ├── unit/
 │   ├── test_group_manager.py      # CRUD, ranking, persistence

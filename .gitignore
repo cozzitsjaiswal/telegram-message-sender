@@ -1,15 +1,25 @@
-# Secrets – never commit these
+# Secrets – never commit
 .env
 .env.local
-.env.staging
 
 # Telethon session files
 *.session
 *.session-journal
 
-# Generated output files
+# Account config (contains API credentials)
+accounts.json
+
+# Generated output
 group_ids.txt
 bot.log
+messages.json
+performance.json
+campaign_memory.json
+
+# PyInstaller build artifacts
+dist/
+build/
+*.spec
 
 # Python
 __pycache__/

@@ -3,7 +3,7 @@
 ## Telegram (via Telethon 1.36.0)
 
 | API | Used In | Purpose |
-|-----|---------|---------|
+| --- | ------- | ------- |
 | `contacts.SearchRequest` | `PromotionEngine.search_groups()`, `ForwardEngine._phase_search()` | Global keyword group discovery |
 | `messages.SearchGlobalRequest` | `PromotionEngine.search_groups()` | Secondary group discovery via post search |
 | `channels.JoinChannelRequest` | `PromotionEngine.join_group()`, `ForwardEngine._phase_join()` | Join public groups/channels |
@@ -18,7 +18,7 @@
 All Telegram errors are explicitly caught per-operation:
 
 | Error Class | Handling |
-|-------------|---------|
+| ----------- | -------- |
 | `FloodWaitError` | Wait `e.seconds` (capped at 60s in controller), retry or requeue |
 | `SlowModeWaitError` | Return `SlowMode:<seconds>` error string |
 | `PeerFloodError` | Mark as failed — too many send attempts |

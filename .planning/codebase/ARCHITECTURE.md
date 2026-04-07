@@ -3,6 +3,7 @@
 ## Pattern
 
 **Layered Desktop MVC** with async Telegram I/O:
+
 - **Model** layer: `core/` — pure data + logic, no Qt imports
 - **View+Controller** layer: `gui/` — Qt widgets wiring signals to `core/` managers
 - **Bridge**: `qasync.QEventLoop` unifies asyncio + Qt event loops
@@ -12,7 +13,8 @@
 The codebase has **two independent campaign engine systems** that evolved separately:
 
 ### System A: CampaignController (v2 — Current primary)
-```
+
+```text
 MainWindow
   └── CampaignController (orchestrator)
         ├── AccountManager  (multi-account pool)
@@ -23,26 +25,29 @@ MainWindow
         ├── AdaptiveEngine  (dynamic delay/wave adjustment)
         └── PromotionEngine (Telethon wrapper per account)
 ```
+
 - Mounted under `gui/campaign_tab.py` (Start/Pause/Stop)
 - Multi-account support: one `PromotionEngine` per logged-in account
 - Wave-based batching with adaptive delays
 - Priority-scored group ranking
 
 ### System B: ForwardEngine (v1 — Legacy, GUI still mounted)
-```
+
+```text
 MainWindow
   └── EngineTab
         └── ForwardEngine (single account, 3-phase pipeline)
               Phase 1: discovery → Phase 2: join → Phase 3: forward loop
 ```
+
 - Mounted under `gui/engine_tab.py` — still accessible in the UI
 - Single-account only, hardcoded `DATA_DIR = "C:/FurayaPromoEngine/data"`
 - Uses only `contacts.SearchRequest` (not the dual-strategy search)
-- **Not integrated** with AccountManager/GroupManager — writes its own joined_groups.json
+- **Not integrated** with AccountManager/GroupManager — writes its own joined\_groups.json
 
 ## Data Flow
 
-```
+```text
 User Action (Qt Button click)
   → QSlot (sync)
     → asyncio.ensure_future(coroutine)
@@ -54,7 +59,7 @@ User Action (Qt Button click)
 ## Entry Points
 
 | File | Role |
-|------|------|
+| ---- | ---- |
 | `main.py` | Creates QApplication, installs qasync event loop, shows MainWindow |
 | `gui/main_window.py` | Instantiates all core managers + CampaignController, wires up 8 tabs |
 | `core/campaign_controller.py` | Top-level campaign state machine, `_run_loop()` is the main async task |
@@ -63,7 +68,7 @@ User Action (Qt Button click)
 ## Key Abstractions
 
 | Class | File | Responsibility |
-|-------|------|----------------|
+| ----- | ---- | -------------- |
 | `Account` | `core/account.py` | Single account dataclass + flood/ban state |
 | `AccountManager` | `core/account_manager.py` | CRUD + persistence for account pool |
 | `Group` | `core/group_manager.py` | Group dataclass + priority scoring |
@@ -80,7 +85,7 @@ User Action (Qt Button click)
 ## GUI Tab Layout
 
 | Tab | Widget | Key Dependency |
-|-----|--------|---------------|
+| --- | ------ | -------------- |
 | Dashboard | `DashboardTab` | Receives metrics callbacks from CampaignController |
 | Campaign | `CampaignTab` | Owns Start/Pause/Stop → CampaignController |
 | Accounts | `AccountsTab` | Owns AccountManager, handles login flow |
@@ -88,7 +93,7 @@ User Action (Qt Button click)
 | Discovery | `DiscoveryTab` | AccountManager + GroupManager + PromotionEngine |
 | Messages | `MessagesTab` | MessageEngine CRUD |
 | Analytics | `AnalyticsTab` | PerformanceTracker display |
-| Logs | `LogsTab` | Receives log_cb events |
+| Logs | `LogsTab` | Receives log\_cb events |
 
 ## State Management
 

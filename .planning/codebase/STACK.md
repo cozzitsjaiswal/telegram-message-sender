@@ -3,15 +3,15 @@
 ## Languages & Runtime
 
 | Item | Value |
-|------|-------|
-| Language | Python 3.10+ (uses `X | Y` union syntax, `from __future__ import annotations`) |
+| ---- | ----- |
+| Language | Python 3.10+ (uses `X \| Y` union syntax, `from __future__ import annotations`) |
 | Runtime | CPython (no Cython, no C extensions beyond Qt) |
 | Entry Point | `main.py` → calls `main()` |
 
 ## Core Dependencies (`requirements.txt`)
 
 | Package | Version | Purpose |
-|---------|---------|---------|
+| ------- | ------- | ------- |
 | `telethon` | 1.36.0 | Telegram MTProto client — all API calls |
 | `PyQt5` | ≥5.15 | Desktop GUI framework |
 | `qasync` | ≥0.27 | Bridge between asyncio event loop and Qt event loop |
@@ -20,7 +20,7 @@
 ## Build & Distribution
 
 | Item | Detail |
-|------|--------|
+| ---- | ------ |
 | Packager | PyInstaller (`FurayaPromoEngine.spec`) |
 | Output | Single-file `FurayaPromoEngine.exe` |
 | Hidden imports | `qasync`, `telethon.*` modules explicitly listed |
@@ -37,8 +37,8 @@
 ## Data Storage
 
 - **Format**: JSON files in `~/FurayaPromoEngine/data/` (user home directory)
-- `data/accounts.json` — serialized `Account` objects (phone, api_id, api_hash only)
-- `data/groups.json` — serialized `Group` objects (username, title, stats, priority_score)
+- `data/accounts.json` — serialized `Account` objects (phone, api\_id, api\_hash only)
+- `data/groups.json` — serialized `Group` objects (username, title, stats, priority\_score)
 - `data/messages.json` — serialized `MessageTemplate` objects
 - `data/performance.json` — per-account metrics + session history (last 50 sessions)
 - `data/state.json` — TaskQueue state (currently placeholder, not persisted)

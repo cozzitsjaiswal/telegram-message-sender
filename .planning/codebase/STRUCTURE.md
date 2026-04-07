@@ -2,7 +2,7 @@
 
 ## Root Layout
 
-```
+```text
 telegram-message-sender/
 ├── main.py                          # Entry point — app bootstrap
 ├── requirements.txt                  # 4 deps: telethon, PyQt5, qasync, python-dotenv
@@ -63,7 +63,7 @@ telegram-message-sender/
 ## Key File Locations
 
 | What | Path |
-|------|------|
+| ---- | ---- |
 | App entry | `main.py` |
 | QSS theme | `gui/styles.py` → `DARK_THEME` string |
 | Campaign brain | `core/campaign_controller.py` → `CampaignController._run_loop()` |
@@ -87,7 +87,7 @@ telegram-message-sender/
 ## Duplication Notes
 
 | Issue | Files |
-|-------|-------|
+| ----- | ----- |
 | `AddAccountDialog` defined twice | `gui/accounts_tab.py` line 25 AND `gui/add_account_dialog.py` |
 | `log_tab.py` vs `logs_tab.py` | Both exist — `logs_tab.py` is imported in `main_window.py` |
 | `account_tab.py` vs `accounts_tab.py` | `account_tab.py` appears to be earlier single-account version |

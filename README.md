@@ -1,61 +1,59 @@
 
-# Telegram Message Forwarding Bot
+# Telegram Promotion Bot
 
-A Telegram userbot that monitors source channels and automatically forwards new messages to target groups at randomised intervals. Built with [Telethon](https://docs.telethon.dev/).
+A Windows-friendly GUI application for automated Telegram promotion across multiple accounts. Built with [Telethon](https://docs.telethon.dev/) and [PyQt5](https://pypi.org/project/PyQt5/).
+
+---
 
 ## Features
 
-- 📡 Monitor multiple source channels simultaneously
-- 📨 Forward messages to multiple target groups
-- ⏱️ Randomised delay between forwards (configurable `MIN_TIME` / `MAX_TIME`)
-- 📝 Structured logging to both console and `bot.log`
-- 🔄 Periodic re-forwarding: each new message is re-queued and forwarded again after the delay
-- 🛡️ Start-up validation for all required environment variables
-- 🗂️ Automatically writes discoverable group IDs to `group_ids.txt` on start
-- 🛑 Graceful shutdown on `Ctrl+C` / `SIGTERM`
+| Feature | Details |
+|---|---|
+| 👤 **Multi-account management** | Add unlimited Telegram user accounts; login via GUI OTP flow |
+| 🔄 **Account rotation** | Round-robin rotation; auto-skips accounts in flood cooldown or banned |
+| 📢 **10 message templates** | Rotating promotional messages, varied in tone and length |
+| ⏱️ **Human-like delays** | Randomised delay between `MIN` and `MAX` seconds per message |
+| 🛡️ **Error handling** | FloodWaitError → cooldown; banned errors → account marked inactive; auto-retry on network errors |
+| 📋 **Live log tab** | Colour-coded, timestamped log (info / warning / error / success) |
+| 📂 **Target file loading** | Load group usernames from a plain `.txt` file |
+| 💾 **Session persistence** | Telethon session files keep accounts logged in across restarts |
 
-## Requirements
+---
 
-- Python 3.10+
-- A Telegram account
-- A Telegram **API ID** and **API Hash** – get them from [my.telegram.org](https://my.telegram.org)
+## Project Structure
+
+```
+telegram-message-sender/
+├── main.py                    # Entry point (qasync + PyQt5)
+├── requirements.txt
+├── .env.example
+├── core/
+│   ├── account.py             # Account dataclass & status
+│   ├── account_manager.py     # Multi-account storage & rotation
+│   ├── messages.py            # 10 message templates
+│   ├── scraper.py             # Group target loader
+│   └── promotion_engine.py    # Main promotion loop
+└── gui/
+    ├── styles.py              # Dark theme stylesheet
+    ├── main_window.py         # Main window + tab layout
+    ├── accounts_tab.py        # Accounts table + login flow
+    ├── add_account_dialog.py  # Add account dialog
+    ├── otp_dialog.py          # OTP / 2FA login dialog
+    ├── promotion_tab.py       # Promotion controls
+    └── log_tab.py             # Log display
+```
+
+---
 
 ## Installation
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yagizharman/telegram-message-sender.git
-   cd telegram-message-sender
-   ```
+```bash
+git clone https://github.com/yagizharman/telegram-message-sender.git
+cd telegram-message-sender
+pip install -r requirements.txt
+```
 
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. Copy the example env file and fill it in:
-   ```bash
-   cp .env.example .env
-   ```
-   Edit `.env` with your credentials (see [Configuration](#configuration) below).
-
-## Configuration
-
-All settings live in the `.env` file. Use `.env.example` as a template.
-
-| Variable | Required | Description |
-|---|---|---|
-| `API_ID` | ✅ | Telegram API ID from my.telegram.org |
-| `API_HASH` | ✅ | Telegram API Hash from my.telegram.org |
-| `PHONE_NUMBER` | ✅ | Your phone number (international format, e.g. `+1234567890`) |
-| `TARGET_GROUP_IDS` | ✅* | Comma-separated list of target group IDs |
-| `CHANNEL_USERNAMES` | ✅* | Comma-separated channel usernames to monitor (without `@`) |
-| `MIN_TIME` | ✅ | Minimum seconds between forwards (default `30`) |
-| `MAX_TIME` | ✅ | Maximum seconds between forwards (default `60`) |
-
-*Optional at startup, but the bot won't forward anything without them.
-
-> **Tip**: If you don't know your group IDs, run the bot once – it will write all discoverable groups to **`group_ids.txt`** automatically.
+---
 
 ## Usage
 
@@ -63,21 +61,33 @@ All settings live in the `.env` file. Use `.env.example` as a template.
 python main.py
 ```
 
-On first run, Telethon will prompt you to authenticate with your phone number and a one-time code sent by Telegram. A `userbot_session.session` file is created so you only need to do this once.
+### First-time setup (inside the GUI)
 
-## File Overview
+1. Go to the **Accounts** tab → click **Add Account**
+2. Enter your phone number, API ID and API Hash from [my.telegram.org](https://my.telegram.org)
+3. Click **Login** → enter the OTP Telegram sends to your phone
+4. Repeat for all accounts you want to rotate
+5. Go to the **Promotion** tab
+6. Enter target group usernames (one per line) or load a `.txt` file
+7. Set Min/Max delay in seconds
+8. Click **▶ Start Promotion**
 
+---
+
+## Build as a standalone EXE
+
+```bash
+pip install pyinstaller
+pyinstaller --onefile --windowed --name "TelegramBot" main.py
 ```
-telegram-message-sender/
-├── main.py            # Main bot logic
-├── requirements.txt   # Python dependencies
-├── .env.example       # Environment variable template
-├── .gitignore
-└── README.md
-```
 
-## Notes
+The EXE is generated in `dist/`. Copy your `accounts.json` and `.session` files alongside it on deployment.
 
-- This is a **userbot** (runs as a regular Telegram user, not a bot account). Make sure you comply with [Telegram's ToS](https://telegram.org/tos).
-- Keep your `.env` file private – it contains sensitive credentials.
-- The `userbot_session.session` file stores your login. Do not share it.
+---
+
+## Compliance
+
+- This is a **userbot** (operates as a normal Telegram user, not a bot account).
+- Never share your `.session` files or `accounts.json`.
+- Comply with [Telegram's Terms of Service](https://telegram.org/tos) and local laws.
+- Use responsibly — avoid spam and abuse.

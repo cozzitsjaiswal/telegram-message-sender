@@ -12,6 +12,7 @@
 ## Async Patterns
 
 ### Fire-and-forget from Qt slots
+
 ```python
 # Correct pattern used throughout gui/
 def _on_button_clicked(self):
@@ -23,6 +24,7 @@ async def _async_action(self):
 ```
 
 ### Cancellable sleep
+
 ```python
 # Used in CampaignController to allow immediate stop
 async def _sleep(self, seconds: float) -> None:
@@ -33,6 +35,7 @@ async def _sleep(self, seconds: float) -> None:
 ```
 
 ### Stop signaling
+
 ```python
 self._stop_event = asyncio.Event()  # Set to stop
 self._pause_event = asyncio.Event()  # Clear to pause, set to resume
@@ -47,6 +50,7 @@ self._pause_event.set()  # Initially unpaused
 - **UI callbacks**: `log_cb`, `metrics_cb`, `state_cb` — never raises, always optional
 
 Example:
+
 ```python
 async def send_message(self, group_username: str, text: str) -> tuple[bool, str]:
     try:
@@ -61,6 +65,7 @@ async def send_message(self, group_username: str, text: str) -> tuple[bool, str]
 ## Data Model Pattern (Dataclasses)
 
 All domain models use `@dataclass`:
+
 ```python
 @dataclass
 class Group:
@@ -81,10 +86,11 @@ class Group:
 ## Manager Pattern
 
 Managers follow a consistent pattern:
+
 1. `__init__()` → calls `self.load()`
 2. `load()` → reads JSON from `DATA_FILE`, populates `self._<items>` dict/list
 3. `save()` → serializes to JSON, writes to disk
-4. CRUD methods: `add()`, `remove()`, `get_all()`, `get_by_*()` 
+4. CRUD methods: `add()`, `remove()`, `get_all()`, `get_by_*()`
 5. Save on mutation: each mutation method calls `self.save()`
 
 ## Qt Signal/Slot Conventions
@@ -105,6 +111,7 @@ def _on_accounts_changed(self) -> None:
 ## Callback Pattern for Core → GUI Communication
 
 `CampaignController` receives callbacks at construction:
+
 ```python
 CampaignController(
     log_cb=lambda level, msg: ...,      # Called on every log event
@@ -116,7 +123,7 @@ CampaignController(
 ## Naming
 
 | What | Convention | Example |
-|------|-----------|---------|
+| ---- | ---------- | ------- |
 | Private Qt fields | `self._btn_*`, `self._lbl_*` | `self._btn_search`, `self._table` |
 | Async methods | `_async_*` prefix | `_async_login()`, `_async_search()` |
 | Phase methods | `_phase_*` prefix | `_phase_join()`, `_phase_forward_loop()` |
