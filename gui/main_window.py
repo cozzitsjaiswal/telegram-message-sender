@@ -1,4 +1,9 @@
-"""MainWindow — Left sidebar navigation + stacked content panels."""
+"""MainWindow — Left sidebar navigation + stacked content panels.
+
+Full integration of all Furaya modules:
+  Dashboard, Campaign, Accounts, Groups, Discovery,
+  Scraper, Messenger, Member Adder, Forwarder, Messages, Analytics, Logs
+"""
 from __future__ import annotations
 
 import logging
@@ -11,18 +16,23 @@ from PyQt5.QtWidgets import (
 
 from core.account_manager import AccountManager
 from core.campaign_controller import CampaignController
+from core.content_forwarder import ContentForwarder           # NEW
 from core.group_manager import GroupManager
 from core.message_engine import MessageEngine
 from core.performance_tracker import PerformanceTracker
 
 from gui.accounts_tab   import AccountsTab
+from gui.adder_tab       import AdderTab                       # NEW
 from gui.analytics_tab  import AnalyticsTab
 from gui.campaign_tab   import CampaignTab
 from gui.dashboard_tab  import DashboardTab
 from gui.discovery_tab  import DiscoveryTab
+from gui.forwarder_tab   import ForwarderTab                   # NEW
 from gui.groups_tab     import GroupsTab
 from gui.logs_tab       import LogsTab
 from gui.messages_tab   import MessagesTab
+from gui.messenger_tab   import MessengerTab                   # NEW
+from gui.scraper_tab     import ScraperTab                     # NEW
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +45,11 @@ class MainWindow(QMainWindow):
         self.resize(1260, 800)
 
         # ── Shared core modules ──────────────────────────────────────
-        self._accounts = AccountManager()
-        self._groups   = GroupManager()
-        self._messages = MessageEngine()
-        self._perf     = PerformanceTracker()
+        self._accounts  = AccountManager()
+        self._groups    = GroupManager()
+        self._messages  = MessageEngine()
+        self._perf      = PerformanceTracker()
+        self._forwarder = ContentForwarder()                   # NEW
 
         # ── Controller (brain) ───────────────────────────────────────
         self._ctrl = CampaignController(
@@ -76,7 +87,7 @@ class MainWindow(QMainWindow):
         logo.setObjectName("logo_label")
         sidebar_lay.addWidget(logo)
 
-        ver = QLabel("v2.0  Campaign System")
+        ver = QLabel("v3.0  Full Suite")
         ver.setObjectName("version_label")
         sidebar_lay.addWidget(ver)
 
@@ -84,14 +95,18 @@ class MainWindow(QMainWindow):
         self._stack = QStackedWidget()
 
         nav_items = [
-            ("📊  Dashboard",   self._make_dashboard()),
-            ("🚀  Campaign",    self._make_campaign()),
-            ("👤  Accounts",    self._make_accounts()),
-            ("👥  Groups",      self._make_groups()),
-            ("🔍  Discovery",   self._make_discovery()),
-            ("✉️   Messages",   self._make_messages()),
-            ("📈  Analytics",   self._make_analytics()),
-            ("📋  Logs",        self._make_logs()),
+            ("📊  Dashboard",      self._make_dashboard()),
+            ("🚀  Campaign",       self._make_campaign()),
+            ("👤  Accounts",       self._make_accounts()),
+            ("👥  Groups",         self._make_groups()),
+            ("🔍  Discovery",      self._make_discovery()),
+            ("🕵️  Scraper",        self._make_scraper()),        # NEW
+            ("📨  Messenger",      self._make_messenger()),      # NEW
+            ("➕  Member Adder",   self._make_adder()),           # NEW
+            ("📡  Forwarder",      self._make_forwarder()),       # NEW
+            ("✉️   Messages",      self._make_messages()),
+            ("📈  Analytics",      self._make_analytics()),
+            ("📋  Logs",           self._make_logs()),
         ]
 
         self._nav_buttons: list[QPushButton] = []
@@ -156,6 +171,22 @@ class MainWindow(QMainWindow):
         self._discovery_tab.groups_updated.connect(self._on_groups_changed)
         return self._discovery_tab
 
+    def _make_scraper(self) -> QWidget:                         # NEW
+        self._scraper_tab = ScraperTab(self._accounts)
+        return self._scraper_tab
+
+    def _make_messenger(self) -> QWidget:                       # NEW
+        self._messenger_tab = MessengerTab(self._accounts)
+        return self._messenger_tab
+
+    def _make_adder(self) -> QWidget:                           # NEW
+        self._adder_tab = AdderTab(self._accounts)
+        return self._adder_tab
+
+    def _make_forwarder(self) -> QWidget:                       # NEW
+        self._forwarder_tab = ForwarderTab(self._accounts, self._forwarder)
+        return self._forwarder_tab
+
     def _make_messages(self) -> QWidget:
         self._messages_tab = MessagesTab(self._messages)
         self._messages_tab.messages_changed.connect(
@@ -200,6 +231,9 @@ class MainWindow(QMainWindow):
 
     def _on_accounts_changed(self) -> None:
         self._discovery_tab.on_accounts_changed()
+        self._scraper_tab.on_accounts_changed()                 # NEW
+        self._adder_tab.on_accounts_changed()                   # NEW
+        self._forwarder_tab.on_accounts_changed()               # NEW
         n = self._accounts.logged_in_count
         self._on_log("INFO", f"Accounts updated — {n} logged in, {self._accounts.total_count} total")
 
@@ -214,5 +248,6 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # noqa: N802
         self._ctrl.stop()
+        self._forwarder.stop()                                  # NEW
         self._perf.save()
         super().closeEvent(event)
