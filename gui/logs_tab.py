@@ -1,7 +1,7 @@
 """Logs Tab — color-coded live log viewer."""
 from __future__ import annotations
 
-from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtCore import pyqtSignal, QDateTime
 from PyQt5.QtWidgets import (
     QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget,
 )
@@ -60,7 +60,6 @@ class LogsTab(QWidget):
             "ERROR":   "#904040",
         }
         color = colors.get(level.upper(), "#3a5090")
-        from PyQt5.QtCore import QDateTime
         ts = QDateTime.currentDateTime().toString("hh:mm:ss")
         html = f'<span style="color:#222240;">[{ts}]</span> <span style="color:{color};">[{level}] {msg}</span>'
         self._log.appendHtml(html)

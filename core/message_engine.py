@@ -8,7 +8,7 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import List, Optional
 
-DATA_FILE = Path("data/messages.json")
+DATA_FILE = Path.home() / "FurayaPromoEngine" / "data" / "messages.json"
 
 # Small sets of decorative elements for variation
 _EMOJIS = ["🔥", "💥", "⚡", "✅", "🚀", "💎", "🎯", "💯", "👉", "🌟"]

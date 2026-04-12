@@ -153,8 +153,8 @@ class ForwarderTab(QWidget):
     def _refresh_combo(self):
         self._acc_combo.clear()
         for acc in self.accounts.get_all():
-            icon = "✅" if acc.client else "❌"
-            self._acc_combo.addItem(f"{icon} {acc.phone}", acc)
+            icon = "✅" if acc.get('engine') else "❌"
+            self._acc_combo.addItem(f"{icon} {acc.get("phone")}", acc)
 
     def on_accounts_changed(self):
         self._refresh_combo()
@@ -217,7 +217,7 @@ class ForwarderTab(QWidget):
 
     def _on_start(self):
         acc = self._acc_combo.currentData()
-        if not acc or not acc.client:
+        if not acc or not acc.get('engine'):
             self._status.setText("❌ Account not logged in")
             return
 

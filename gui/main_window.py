@@ -1,12 +1,15 @@
 """MainWindow — Left sidebar navigation + stacked content panels.
 
 Full integration of all Furaya modules:
-  Dashboard, Campaign, Accounts, Groups, Discovery,
+  ⚡ AutoPilot, Dashboard, Campaign, Accounts, Groups, Discovery,
   Scraper, Messenger, Member Adder, Forwarder, Messages, Analytics, Logs
 """
 from __future__ import annotations
 
 import logging
+import asyncio
+import sys
+from pathlib import Path
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
@@ -16,23 +19,25 @@ from PyQt5.QtWidgets import (
 
 from core.account_manager import AccountManager
 from core.campaign_controller import CampaignController
-from core.content_forwarder import ContentForwarder           # NEW
+from core.content_forwarder import ContentForwarder
 from core.group_manager import GroupManager
 from core.message_engine import MessageEngine
 from core.performance_tracker import PerformanceTracker
 
-from gui.accounts_tab   import AccountsTab
-from gui.adder_tab       import AdderTab                       # NEW
-from gui.analytics_tab  import AnalyticsTab
-from gui.campaign_tab   import CampaignTab
-from gui.dashboard_tab  import DashboardTab
-from gui.discovery_tab  import DiscoveryTab
-from gui.forwarder_tab   import ForwarderTab                   # NEW
-from gui.groups_tab     import GroupsTab
-from gui.logs_tab       import LogsTab
-from gui.messages_tab   import MessagesTab
-from gui.messenger_tab   import MessengerTab                   # NEW
-from gui.scraper_tab     import ScraperTab                     # NEW
+from gui.accounts_tab    import AccountsTab
+from gui.adder_tab        import AdderTab
+from gui.analytics_tab   import AnalyticsTab
+from gui.autopilot_tab    import AutoPilotTab            # ← NEW
+from gui.campaign_tab    import CampaignTab
+from gui.dashboard_tab   import DashboardTab
+from gui.discovery_tab   import DiscoveryTab
+from gui.forwarder_tab    import ForwarderTab
+from gui.groups_tab      import GroupsTab
+from gui.logs_tab        import LogsTab
+from gui.messages_tab    import MessagesTab
+from gui.messenger_tab    import MessengerTab
+from gui.scraper_tab      import ScraperTab
+from gui.tdlib_auth_dialogs import TDLibOTPDialog, TDLib2FADialog
 
 logger = logging.getLogger(__name__)
 
@@ -40,16 +45,26 @@ logger = logging.getLogger(__name__)
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Furaya — Campaign Control System")
+        self.setWindowTitle("Furaya — Autonomous Campaign System")
         self.setMinimumSize(1100, 700)
-        self.resize(1260, 800)
+        self.resize(1300, 850)
 
-        # ── Shared core modules ──────────────────────────────────────
-        self._accounts  = AccountManager()
+        self.app_dir = Path.home() / "FurayaPromoEngine"
+        
+        base_path = Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else Path(__file__).parent.parent
+        self.tdlib_dll = base_path / "tdjson.dll"
+
+        # 3. Initialize Core Managers (Now with TDLib engine)
+        self._accounts = AccountManager(data_path=self.app_dir / "data", tdlib_dll_path=self.tdlib_dll)
+        
+        # Inject OTP and 2FA handlers to AccountManager
+        self._accounts.otp_provider = self.get_otp_from_user
+        self._accounts.tfa_provider = self.get_2fa_from_user
+        
         self._groups    = GroupManager()
         self._messages  = MessageEngine()
         self._perf      = PerformanceTracker()
-        self._forwarder = ContentForwarder()                   # NEW
+        self._forwarder = ContentForwarder()
 
         # ── Controller (brain) ───────────────────────────────────────
         self._ctrl = CampaignController(
@@ -63,6 +78,30 @@ class MainWindow(QMainWindow):
         )
 
         self._setup_ui()
+
+    # ── TDLib Auth Bridges ───────────────────────────────────────
+    
+    async def get_otp_from_user(self, phone: str):
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+        def show_dialog():
+            dlg = TDLibOTPDialog(phone)
+            dlg.submitted.connect(lambda code: loop.call_soon_threadsafe(future.set_result, code))
+            dlg.exec_()
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(0, show_dialog)
+        return await future
+
+    async def get_2fa_from_user(self, phone: str):
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+        def show_dialog():
+            dlg = TDLib2FADialog(phone)
+            dlg.submitted.connect(lambda pwd: loop.call_soon_threadsafe(future.set_result, pwd))
+            dlg.exec_()
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(0, show_dialog)
+        return await future
 
     # ------------------------------------------------------------------
     # UI
@@ -87,7 +126,7 @@ class MainWindow(QMainWindow):
         logo.setObjectName("logo_label")
         sidebar_lay.addWidget(logo)
 
-        ver = QLabel("v3.0  Full Suite")
+        ver = QLabel("v4.0  AutoPilot")
         ver.setObjectName("version_label")
         sidebar_lay.addWidget(ver)
 
@@ -95,15 +134,16 @@ class MainWindow(QMainWindow):
         self._stack = QStackedWidget()
 
         nav_items = [
+            ("⚡  AutoPilot",      self._make_autopilot()),      # ← FIRST TAB
             ("📊  Dashboard",      self._make_dashboard()),
             ("🚀  Campaign",       self._make_campaign()),
             ("👤  Accounts",       self._make_accounts()),
             ("👥  Groups",         self._make_groups()),
             ("🔍  Discovery",      self._make_discovery()),
-            ("🕵️  Scraper",        self._make_scraper()),        # NEW
-            ("📨  Messenger",      self._make_messenger()),      # NEW
-            ("➕  Member Adder",   self._make_adder()),           # NEW
-            ("📡  Forwarder",      self._make_forwarder()),       # NEW
+            ("🕵️  Scraper",        self._make_scraper()),
+            ("📨  Messenger",      self._make_messenger()),
+            ("➕  Member Adder",   self._make_adder()),
+            ("📡  Forwarder",      self._make_forwarder()),
             ("✉️   Messages",      self._make_messages()),
             ("📈  Analytics",      self._make_analytics()),
             ("📋  Logs",           self._make_logs()),
@@ -132,7 +172,7 @@ class MainWindow(QMainWindow):
         # ── Status bar ───────────────────────────────────────────────
         self._status_bar = QStatusBar()
         self.setStatusBar(self._status_bar)
-        self._status_lbl = QLabel("Furaya System — Ready")
+        self._status_lbl = QLabel("Furaya v4.0 — AutoPilot Ready")
         self._status_bar.addPermanentWidget(self._status_lbl)
 
         self._switch(0)
@@ -147,6 +187,12 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Tab factories
     # ------------------------------------------------------------------
+
+    def _make_autopilot(self) -> QWidget:                       # ← NEW
+        self._autopilot_tab = AutoPilotTab(
+            self._accounts, self._groups, self._messages,
+        )
+        return self._autopilot_tab
 
     def _make_dashboard(self) -> QWidget:
         self._dashboard = DashboardTab()
@@ -171,19 +217,19 @@ class MainWindow(QMainWindow):
         self._discovery_tab.groups_updated.connect(self._on_groups_changed)
         return self._discovery_tab
 
-    def _make_scraper(self) -> QWidget:                         # NEW
+    def _make_scraper(self) -> QWidget:
         self._scraper_tab = ScraperTab(self._accounts)
         return self._scraper_tab
 
-    def _make_messenger(self) -> QWidget:                       # NEW
+    def _make_messenger(self) -> QWidget:
         self._messenger_tab = MessengerTab(self._accounts)
         return self._messenger_tab
 
-    def _make_adder(self) -> QWidget:                           # NEW
+    def _make_adder(self) -> QWidget:
         self._adder_tab = AdderTab(self._accounts)
         return self._adder_tab
 
-    def _make_forwarder(self) -> QWidget:                       # NEW
+    def _make_forwarder(self) -> QWidget:
         self._forwarder_tab = ForwarderTab(self._accounts, self._forwarder)
         return self._forwarder_tab
 
@@ -231,9 +277,10 @@ class MainWindow(QMainWindow):
 
     def _on_accounts_changed(self) -> None:
         self._discovery_tab.on_accounts_changed()
-        self._scraper_tab.on_accounts_changed()                 # NEW
-        self._adder_tab.on_accounts_changed()                   # NEW
-        self._forwarder_tab.on_accounts_changed()               # NEW
+        self._scraper_tab.on_accounts_changed()
+        self._adder_tab.on_accounts_changed()
+        self._forwarder_tab.on_accounts_changed()
+        self._autopilot_tab.on_accounts_changed()               # ← NEW
         n = self._accounts.logged_in_count
         self._on_log("INFO", f"Accounts updated — {n} logged in, {self._accounts.total_count} total")
 
@@ -248,6 +295,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # noqa: N802
         self._ctrl.stop()
-        self._forwarder.stop()                                  # NEW
+        self._forwarder.stop()
+        self._autopilot_tab.shutdown()                          # ← NEW
         self._perf.save()
         super().closeEvent(event)

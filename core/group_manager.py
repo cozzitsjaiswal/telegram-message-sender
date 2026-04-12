@@ -7,7 +7,7 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Dict, List, Optional
 
-DATA_FILE = Path("data/groups.json")
+DATA_FILE = Path.home() / "FurayaPromoEngine" / "data" / "groups.json"
 
 
 @dataclass
@@ -79,6 +79,14 @@ class GroupManager:
         self._groups[group.username] = group
         self.save()
         return True
+
+    def remove(self, username: str) -> bool:
+        """Remove a group by username. Returns True if it existed."""
+        if username in self._groups:
+            del self._groups[username]
+            self.save()
+            return True
+        return False
 
     def get_all(self) -> List[Group]:
         return list(self._groups.values())

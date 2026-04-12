@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from PyQt5.QtCore import pyqtSignal, Qt
+from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import (
     QDialog, QDialogButtonBox, QHBoxLayout, QHeaderView,
     QLabel, QMessageBox, QPlainTextEdit, QPushButton,
@@ -94,7 +95,6 @@ class MessagesTab(QWidget):
             self._table.item(row, 0).setData(Qt.UserRole, t.id)
             self._table.setItem(row, 1, QTableWidgetItem(str(t.usage_count)))
             score_item = QTableWidgetItem(f"{t.performance_score:.0f}%")
-            from PyQt5.QtGui import QColor
             score_item.setForeground(
                 QColor("#40d060") if t.performance_score >= 60 else QColor("#e05050")
             )

@@ -26,7 +26,7 @@ from core.forward_engine import ForwardEngine, EngineStats
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = Path("C:/FurayaPromoEngine/data")
+DATA_DIR = Path.home() / "FurayaPromoEngine" / "data"
 PROMO_FILE = DATA_DIR / "promo_post.txt"
 
 

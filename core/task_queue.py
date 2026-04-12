@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Deque, List, Optional
 from collections import deque
 
-STATE_FILE = Path("data/state.json")
+STATE_FILE = Path.home() / "FurayaPromoEngine" / "data" / "state.json"
 
 
 class TaskStatus(str, Enum):

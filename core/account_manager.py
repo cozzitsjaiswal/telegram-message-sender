@@ -1,90 +1,113 @@
-"""AccountManager — multi-account management with persistence."""
-from __future__ import annotations
+"""
+core/account_manager.py – Multi‑account management with TDLib backend
+"""
 
 import json
-import logging
+import asyncio
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Dict, Optional
+from datetime import datetime
+import logging
 
-from core.account import Account, AccountStatus
+from core.tdlib_engine import TDLibEngine
 
 logger = logging.getLogger(__name__)
-DATA_FILE = Path("data/accounts.json")
 
 
 class AccountManager:
-    def __init__(self) -> None:
-        self._accounts: Dict[str, Account] = {}
-        self.load()
-
-    # ------------------------------------------------------------------
-    # Persistence
-    # ------------------------------------------------------------------
-
-    def load(self) -> None:
-        if DATA_FILE.exists():
-            try:
-                raw = json.loads(DATA_FILE.read_text(encoding="utf-8"))
-                if isinstance(raw, list):
-                    for d in raw:
-                        acc = Account.from_dict(d)
-                        self._accounts[acc.phone] = acc
-                elif isinstance(raw, dict):
-                    for phone, d in raw.items():
-                        acc = Account.from_dict(d)
-                        self._accounts[acc.phone] = acc
-                logger.info("Loaded %d account(s)", len(self._accounts))
-            except Exception as e:
-                logger.error("Failed to load accounts: %s", e)
-
-    def save(self) -> None:
-        DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
-        DATA_FILE.write_text(
-            json.dumps([a.to_dict() for a in self._accounts.values()], indent=2),
-            encoding="utf-8",
-        )
-
-    # ------------------------------------------------------------------
-    # CRUD
-    # ------------------------------------------------------------------
-
-    def add(self, phone: str, api_id: int, api_hash: str) -> Account:
-        if phone in self._accounts:
-            raise ValueError(f"Account {phone} already exists.")
-        acc = Account(phone=phone, api_id=api_id, api_hash=api_hash)
-        self._accounts[phone] = acc
-        self.save()
-        logger.info("Added account: %s", phone)
-        return acc
-
-    def remove(self, phone: str) -> bool:
-        if phone in self._accounts:
-            del self._accounts[phone]
-            self.save()
+    def __init__(self, data_path: Path, tdlib_dll_path: Path):
+        self.data_path = data_path
+        self.tdlib_dll_path = tdlib_dll_path
+        self.accounts_file = data_path / "accounts.json"
+        self.accounts: List[Dict] = []  # each: {phone, api_id, api_hash, engine}
+        self.load_accounts()
+    
+    def load_accounts(self):
+        if self.accounts_file.exists():
+            with open(self.accounts_file, 'r') as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    self.accounts = data
+                else:
+                    self.accounts = data.get('accounts', [])
+                # Recreate engine objects? We'll lazy-init on login
+                for acc in self.accounts:
+                    acc['engine'] = None
+                    acc['status'] = 'disconnected'
+    
+    def save_accounts(self):
+        to_save = []
+        for acc in self.accounts:
+            to_save.append({
+                'phone': acc['phone'],
+                'api_id': acc['api_id'],
+                'api_hash': acc['api_hash'],
+                'status': acc.get('status', 'disconnected'),
+                'added_at': acc.get('added_at', datetime.now().isoformat())
+            })
+        with open(self.accounts_file, 'w') as f:
+            json.dump({'accounts': to_save}, f, indent=2)
+    
+    def add_account(self, phone: str, api_id: int, api_hash: str):
+        # Check duplicate
+        if any(a['phone'] == phone for a in self.accounts):
+            return False
+        self.accounts.append({
+            'phone': phone,
+            'api_id': api_id,
+            'api_hash': api_hash,
+            'engine': None,
+            'status': 'pending',
+            'added_at': datetime.now().isoformat()
+        })
+        self.save_accounts()
+        return True
+    
+    async def login_account(self, index: int, on_otp, on_2fa) -> bool:
+        acc = self.accounts[index]
+        if acc.get('engine') and acc['status'] == 'connected':
             return True
-        return False
-
-    def get_by_phone(self, phone: str) -> Optional[Account]:
-        return self._accounts.get(phone)
-
-    def get_all(self) -> List[Account]:
-        return list(self._accounts.values())
-
-    def get_active(self) -> List[Account]:
-        return [a for a in self._accounts.values() if a.is_available and a.client is not None]
-
-    # ------------------------------------------------------------------
-    # Stats
-    # ------------------------------------------------------------------
-
+        
+        engine = TDLibEngine(
+            phone_number=acc['phone'],
+            api_id=acc['api_id'],
+            api_hash=acc['api_hash'],
+            database_dir=self.data_path / f"tdlib_{acc['phone'].replace('+','')}",
+            tdlib_dll_path=self.tdlib_dll_path,
+            on_otp=on_otp,
+            on_2fa=on_2fa
+        )
+        success = await engine.start()
+        if success:
+            acc['engine'] = engine
+            acc['status'] = 'connected'
+        else:
+            acc['status'] = 'failed'
+        self.save_accounts()
+        return success
+    
+    def get_engine(self, index: int) -> Optional[TDLibEngine]:
+        if 0 <= index < len(self.accounts):
+            return self.accounts[index].get('engine')
+        return None
+    
+    def get_status(self, index: int) -> str:
+        return self.accounts[index].get('status', 'unknown')
+    
     @property
     def total_count(self) -> int:
-        return len(self._accounts)
+        return len(self.accounts)
+        
+    def account_count(self) -> int:
+        return self.total_count
+        
+    def get_all(self):
+        return self.accounts
 
-    @property
-    def active_count(self) -> int:
-        return sum(1 for a in self._accounts.values() if a.is_available and a.client is not None)
+    def get_active(self):
+        return [a for a in self.accounts if a.get('status') == 'connected']
 
-    @property
-    def logged_in_count(self) -> int:
-        return sum(1 for a in self._accounts.values() if a.client is not None)
+    async def stop_all(self):
+        for acc in self.accounts:
+            if acc.get('engine'):
+                await acc['engine'].stop()

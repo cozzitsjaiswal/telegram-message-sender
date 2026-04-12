@@ -33,7 +33,7 @@ from telethon.tl.types import Channel, Chat
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = Path("C:/FurayaPromoEngine/data")
+DATA_DIR = Path.home() / "FurayaPromoEngine" / "data"
 
 
 class EngineState(str, Enum):

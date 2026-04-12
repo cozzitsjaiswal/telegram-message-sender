@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtCore import pyqtSignal, Qt
 from PyQt5.QtWidgets import (
     QComboBox, QFormLayout, QGroupBox, QHBoxLayout,
     QLabel, QPushButton, QVBoxLayout, QWidget,
@@ -49,7 +49,7 @@ class CampaignTab(QWidget):
             "<b>Aggressive</b>: 20 tasks/wave | 8-20s delays | Fast, higher risk"
             "</small>"
         )
-        mode_desc.setTextFormat(__import__("PyQt5.QtCore", fromlist=["Qt"]).Qt.RichText)
+        mode_desc.setTextFormat(Qt.RichText)
         mode_desc.setWordWrap(True)
         form.addRow("", mode_desc)
         layout.addWidget(cfg_box)

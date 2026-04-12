@@ -134,9 +134,8 @@ class CampaignController:
                     continue
 
                 engine_list = [
-                    self.accounts.get_by_phone(p)
-                    for p in self._engines.keys()
-                    if self.accounts.get_by_phone(p) and self.accounts.get_by_phone(p).is_available
+                    acc for p in self._engines.keys()
+                    if (acc := self.accounts.get_by_phone(p)) and acc.is_available
                 ]
                 if not engine_list:
                     self._log("WARN", "All accounts on cooldown. Waiting...")

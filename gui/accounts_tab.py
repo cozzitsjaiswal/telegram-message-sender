@@ -6,20 +6,16 @@ import logging
 from pathlib import Path
 
 from PyQt5.QtCore import pyqtSignal, Qt
+from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import (
     QDialog, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView,
     QLabel, QLineEdit, QMessageBox, QPushButton,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
-from telethon import TelegramClient
-from telethon.errors import SessionPasswordNeededError
-
-from core.account import Account, AccountStatus
 from core.account_manager import AccountManager
-from gui.otp_dialog import OtpDialog
 
 logger = logging.getLogger(__name__)
-DATA_DIR = Path("data")
+DATA_DIR = Path.home() / "FurayaPromoEngine" / "data"
 
 
 class AddAccountDialog(QDialog):
@@ -98,33 +94,39 @@ class AccountsTab(QWidget):
         accounts = self.manager.get_all()
         self._table.setRowCount(len(accounts))
         for row, acc in enumerate(accounts):
-            self._table.setItem(row, 0, QTableWidgetItem(acc.phone))
+            phone = acc.get('phone', '???')
+            self._table.setItem(row, 0, QTableWidgetItem(phone))
 
-            status_map = {
-                AccountStatus.IDLE: ("● Idle", "#6070a0"),
-                AccountStatus.ACTIVE: ("▶ Active", "#40d060"),
-                AccountStatus.FLOOD: ("⏳ Flood", "#d0a020"),
-                AccountStatus.BANNED: ("✖ Banned", "#e05050"),
-                AccountStatus.DISCONNECTED: ("✖ Disconnected", "#e05050"),
-            }
-            s_text, s_color = status_map.get(acc.status, ("—", "#5060a0"))
-            if acc.client is None:
-                s_text, s_color = "❌ Not logged in", "#5a3030"
+            s_text = "—"
+            s_color = "#5060a0"
+            status = acc.get('status', 'unknown')
+            engine = acc.get('engine')
+            
+            if status == 'connected':
+                s_text, s_color = "✅ Logged In", "#40d060"
+            elif status == 'pending':
+                s_text, s_color = "● Idle", "#6070a0"
+            elif status == 'failed':
+                s_text, s_color = "❌ Failed", "#e05050"
+            elif status == 'disconnected':
+                s_text, s_color = "✖ Disconnected", "#e05050"
+
             status_item = QTableWidgetItem(s_text)
-            status_item.setForeground(__import__("PyQt5.QtGui", fromlist=["QColor"]).QColor(s_color))
+            status_item.setForeground(QColor(s_color))
             self._table.setItem(row, 1, status_item)
 
-            health = "✅ Good" if acc.client else "⚠️ Offline"
+            health = "✅ Good" if engine else "⚠️ Offline"
             self._table.setItem(row, 2, QTableWidgetItem(health))
 
-            btn_login = QPushButton("🔑 Login" if not acc.client else "🔄 Reconnect")
-            btn_login.clicked.connect(lambda checked, a=acc: asyncio.ensure_future(self._async_login(a)))
+            btn_login = QPushButton("🔑 Login" if not engine else "🔄 Reconnect")
+            # We pass row index instead of acc dictionary, as manager expects index
+            btn_login.clicked.connect(lambda checked, idx=row: asyncio.ensure_future(self._async_login(idx)))
             self._table.setCellWidget(row, 3, btn_login)
 
             btn_remove = QPushButton("🗑")
             btn_remove.setObjectName("btn_danger")
             btn_remove.setFixedWidth(40)
-            btn_remove.clicked.connect(lambda checked, p=acc.phone: self._on_remove(p))
+            btn_remove.clicked.connect(lambda checked, p=phone: self._on_remove(p))
             self._table.setCellWidget(row, 4, btn_remove)
 
         self._table.setRowHeight.__doc__  # dummy ref
@@ -147,7 +149,7 @@ class AccountsTab(QWidget):
             QMessageBox.warning(self, "Invalid", "API ID must be a number.")
             return
         try:
-            self.manager.add(phone, api_id, api_hash)
+            self.manager.add_account(phone, api_id, api_hash)
             self.refresh_table()
             self.accounts_changed.emit()
             self._status.setText(f"✅ Added {phone}")
@@ -156,56 +158,34 @@ class AccountsTab(QWidget):
 
     def _on_remove(self, phone: str):
         if QMessageBox.question(self, "Remove", f"Remove {phone}?") == QMessageBox.Yes:
-            self.manager.remove(phone)
+            self.manager.accounts = [a for a in self.manager.accounts if a.get('phone') != phone]
+            self.manager.save_accounts()
             self.refresh_table()
             self.accounts_changed.emit()
 
-    async def _async_login(self, account: Account):
-        self._status.setText(f"⏳ Logging in {account.phone}...")
+    async def _async_login(self, index: int):
+        acc = self.manager.accounts[index]
+        phone = acc.get('phone')
+        self._status.setText(f"⏳ Logging in {phone} via TDLib...")
         try:
-            session_path = str(DATA_DIR / account.session_name)
-            client = TelegramClient(session_path, account.api_id, account.api_hash)
-            await client.connect()
+            success = await self.manager.login_account(
+                index,
+                on_otp=self.manager.otp_provider,
+                on_2fa=self.manager.tfa_provider
+            )
 
-            if await client.is_user_authorized():
-                account.client = client
-                account.mark_idle()
+            if success:
                 self.refresh_table()
                 self.accounts_changed.emit()
-                self._status.setText(f"✅ {account.phone} connected")
-                return
-
-            await client.send_code_request(account.phone)
-            dlg = OtpDialog(account.phone, self)
-            loop = asyncio.get_event_loop()
-            fut = loop.create_future()
-            dlg.finished.connect(lambda r: fut.set_result(r) if not fut.done() else None)
-            dlg.open()
-            result = await fut
-
-            if result != QDialog.Accepted or not dlg.code:
-                await client.disconnect()
-                self._status.setText("❌ Login cancelled")
-                return
-
-            try:
-                await client.sign_in(account.phone, dlg.code)
-            except SessionPasswordNeededError:
-                if not dlg.password:
-                    self._status.setText("❌ 2FA required but no password entered")
-                    await client.disconnect()
-                    return
-                await client.sign_in(password=dlg.password)
-
-            account.client = client
-            account.mark_idle()
-            self.refresh_table()
-            self.accounts_changed.emit()
-            self._status.setText(f"✅ {account.phone} logged in")
+                self._status.setText(f"✅ {phone} connected (TDLib)")
+            else:
+                self._status.setText(f"❌ {phone} login failed")
 
         except Exception as exc:
-            self._status.setText(f"❌ Login failed: {exc}")
-            logger.error("Login failed for %s: %s", account.phone, exc)
+            import traceback
+            traceback.print_exc()
+            self._status.setText(f"❌ Login crashed: {exc}")
+            logger.error("Login crashed for %s: %s", phone, exc)
 
     def on_accounts_changed(self):
         self.refresh_table()

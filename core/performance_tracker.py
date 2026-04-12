@@ -7,7 +7,7 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Dict, List
 
-DATA_FILE = Path("data/performance.json")
+DATA_FILE = Path.home() / "FurayaPromoEngine" / "data" / "performance.json"
 
 
 @dataclass

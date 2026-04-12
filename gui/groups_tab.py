@@ -144,9 +144,7 @@ class GroupsTab(QWidget):
         rows = list(set(i.row() for i in self._table.selectedItems()))
         for row in sorted(rows, reverse=True):
             uname = self._table.item(row, 0).data(Qt.UserRole)
-            if uname in self.manager._groups:
-                del self.manager._groups[uname]
-        self.manager.save()
+            self.manager.remove(uname)
         self.refresh_table()
 
     def on_groups_changed(self):

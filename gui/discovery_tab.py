@@ -173,12 +173,11 @@ class DiscoveryTab(QWidget):
 
         self._btn_sel_all = QPushButton("☑ All")
         self._btn_sel_all.setFixedWidth(70)
-        self._btn_sel_all.clicked.connect(self._table.selectAll if hasattr(self, "_table") else lambda: None)
+        # Don't connect yet — _table created below
         btn_row.addWidget(self._btn_sel_all)
 
         self._btn_sel_none = QPushButton("☐ None")
         self._btn_sel_none.setFixedWidth(70)
-        self._btn_sel_none.clicked.connect(lambda: self._table.clearSelection() if hasattr(self, "_table") else None)
         btn_row.addWidget(self._btn_sel_none)
 
         root.addLayout(btn_row)
@@ -250,10 +249,8 @@ class DiscoveryTab(QWidget):
 
         root.addWidget(join_box)
 
-        # Fix btn_sel_all reference now that _table exists
-        self._btn_sel_all.clicked.disconnect()
+        # Connect now that _table exists
         self._btn_sel_all.clicked.connect(self._table.selectAll)
-        self._btn_sel_none.clicked.disconnect()
         self._btn_sel_none.clicked.connect(self._table.clearSelection)
 
         self._refresh_combo()
@@ -274,8 +271,8 @@ class DiscoveryTab(QWidget):
     def _refresh_combo(self) -> None:
         self._acc_combo.clear()
         for acc in self.accounts.get_all():
-            icon = "✅" if acc.client else "❌"
-            self._acc_combo.addItem(f"{icon} {acc.phone}", acc)
+            icon = "✅" if acc.get('engine') else "❌"
+            self._acc_combo.addItem(f"{icon} {acc.get("phone")}", acc)
 
     def on_accounts_changed(self) -> None:
         self._refresh_combo()
@@ -289,7 +286,7 @@ class DiscoveryTab(QWidget):
 
     def _on_search(self) -> None:
         acc = self._acc_combo.currentData()
-        if not acc or not acc.client:
+        if not acc or not acc.get('engine'):
             self._on_status("❌ Account not logged in — go to Accounts tab", "#e05050")
             return
 
@@ -350,9 +347,9 @@ class DiscoveryTab(QWidget):
             )
             kw_found = 0
             
-            def _status_cb(msg: str):
+            def _status_cb(msg: str, _i=i, _kw=kw):
                 self._sig_status.emit(
-                    f"🔍 [{i+1}/{len(keywords)}] '{kw}' → {msg} | Total: {total_found}",
+                    f"🔍 [{_i+1}/{len(keywords)}] '{_kw}' → {msg} | Total: {total_found}",
                     "#4070c0"
                 )
                 
@@ -477,7 +474,7 @@ class DiscoveryTab(QWidget):
             self._on_status("⚠️ Select at least one group to join", "#d07020")
             return
         acc = self._acc_combo.currentData()
-        if not acc or not acc.client:
+        if not acc or not acc.get('engine'):
             self._on_status("❌ Account not logged in", "#e05050")
             return
 

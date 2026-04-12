@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 class MessengerTab(QWidget):
     _sig_status = pyqtSignal(str, str)
     _sig_progress = pyqtSignal(int, int, str)
+    _sig_log = pyqtSignal(str)  # thread-safe log feed
 
     def __init__(self, account_manager: AccountManager, parent=None):
         super().__init__(parent)
@@ -33,6 +34,7 @@ class MessengerTab(QWidget):
         self._setup_ui()
         self._sig_status.connect(self._on_status)
         self._sig_progress.connect(self._on_progress)
+        self._sig_log.connect(self._on_log_append)
 
     def _setup_ui(self):
         root = QVBoxLayout(self)
@@ -201,8 +203,7 @@ class MessengerTab(QWidget):
 
         def _progress(curr, total, msg):
             self._sig_progress.emit(curr, total, msg)
-            # Also append to log
-            self._log_feed.appendPlainText(msg)
+            self._sig_log.emit(msg)  # thread-safe
 
         try:
             result = await self._messenger.run_campaign(
@@ -242,3 +243,6 @@ class MessengerTab(QWidget):
         self._progress.setValue(curr)
         self._status.setText(msg)
         QApplication.processEvents()
+
+    def _on_log_append(self, text):
+        self._log_feed.appendPlainText(text)
