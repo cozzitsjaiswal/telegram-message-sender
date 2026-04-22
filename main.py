@@ -3,6 +3,13 @@ main.py — Furaya v5.5 Entry Point
 """
 import sys
 import asyncio
+import asyncio.base_events
+import asyncio.runners
+import asyncio.exceptions
+import asyncio.coroutines
+import asyncio.format_helpers
+import asyncio.selector_events
+import asyncio.windows_events
 import logging
 
 from PyQt5.QtWidgets import QApplication

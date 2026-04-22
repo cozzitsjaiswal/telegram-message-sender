@@ -84,8 +84,9 @@ class TDLibEngine:
 
         try:
             from pytdbot import Client
-        except ImportError:
-            self._log("ERROR", "pytdbot not installed. Run: pip install pytdbot")
+        except ImportError as e:
+            import traceback
+            self._log("ERROR", f"pytdbot failed to load inside EXE: {e}\n{traceback.format_exc()}")
             return False
 
         # ── Derive database path (no colons on Windows) ───────────────
@@ -109,11 +110,11 @@ class TDLibEngine:
             return False
 
         # ── Auth handler ───────────────────────────────────────────────
-        @self.client.on_update("updateAuthorizationState")
+        @self.client.on_updateAuthorizationState()
         async def _on_auth(client, update):
             try:
-                state = update.authorization_state
-                state_type = type(state).__name__.lower()
+                state = update.get("authorization_state", {})
+                state_type = state.get("@type", "").lower()
                 self._log("INFO", f"Auth state: {state_type}")
 
                 if "waittdlibparameters" in state_type:
@@ -125,10 +126,11 @@ class TDLibEngine:
                     result = await client.setAuthenticationPhoneNumber(
                         phone_number=self.phone_number
                     )
-                    if hasattr(result, "error") and result.error:
-                        self._log("ERROR", f"Phone number rejected: {result.error_message}")
+                    if isinstance(result, dict) and result.get("@type", "").lower() == "error":
+                        err = result.get("message", "Unknown error")
+                        self._log("ERROR", f"Phone number rejected: {err}")
                         self._failed = True
-                        self._fail_reason = result.error_message
+                        self._fail_reason = err
                         self._auth_event.set()
 
                 elif "waitcode" in state_type:
@@ -139,10 +141,11 @@ class TDLibEngine:
                         try:
                             code = await asyncio.wait_for(self._otp_future, timeout=300.0)
                             result = await client.checkAuthenticationCode(code=str(code))
-                            if hasattr(result, "error") and result.error:
-                                self._log("ERROR", f"OTP rejected: {result.error_message}")
+                            if isinstance(result, dict) and result.get("@type", "").lower() == "error":
+                                err = result.get("message", "Unknown error")
+                                self._log("ERROR", f"OTP rejected: {err}")
                                 self._failed = True
-                                self._fail_reason = result.error_message
+                                self._fail_reason = err
                                 self._auth_event.set()
                         except asyncio.TimeoutError:
                             self._log("ERROR", "OTP timed out (5 min)")
@@ -162,10 +165,11 @@ class TDLibEngine:
                         try:
                             pwd = await asyncio.wait_for(self._2fa_future, timeout=300.0)
                             result = await client.checkAuthenticationPassword(password=str(pwd))
-                            if hasattr(result, "error") and result.error:
-                                self._log("ERROR", f"2FA rejected: {result.error_message}")
+                            if isinstance(result, dict) and result.get("@type", "").lower() == "error":
+                                err = result.get("message", "Unknown error")
+                                self._log("ERROR", f"2FA rejected: {err}")
                                 self._failed = True
-                                self._fail_reason = result.error_message
+                                self._fail_reason = err
                                 self._auth_event.set()
                         except asyncio.TimeoutError:
                             self._log("ERROR", "2FA timed out (5 min)")
@@ -194,10 +198,10 @@ class TDLibEngine:
                 self._auth_event.set()
 
         # ── Connection state tracking ──────────────────────────────────
-        @self.client.on_update("updateConnectionState")
+        @self.client.on_updateConnectionState()
         async def _on_conn(client, update):
             try:
-                state = type(update.state).__name__
+                state = update.get("state", {}).get("@type", "Unknown")
                 self._connection_state = state
                 self._log("INFO", f"Connection: {state}")
             except Exception:
@@ -206,7 +210,7 @@ class TDLibEngine:
         # ── Start client (non-blocking) ────────────────────────────────
         try:
             self._log("INFO", "Starting TDLib client...")
-            await self.client.start(login=False)
+            await self.client.start(wait_login=False)
         except Exception as e:
             self._log("ERROR", f"client.start() failed: {e}\n{traceback.format_exc()}")
             return False
