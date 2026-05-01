@@ -36,7 +36,7 @@ def _make_sep():
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Furaya — Autonomous Campaign System v5.5")
+        self.setWindowTitle("Furaya — Autonomous Campaign System v6.0 Enterprise")
         self.setMinimumSize(1050, 680)
         self.resize(1280, 820)
 
@@ -90,7 +90,7 @@ class MainWindow(QMainWindow):
         logo_lay.setSpacing(2)
         logo = QLabel("FURAYA")
         logo.setObjectName("logo_label")
-        ver = QLabel("v5.5  ENTERPRISE")
+        ver = QLabel("v6.0  ENTERPRISE")
         ver.setObjectName("version_label")
         logo_lay.addWidget(logo)
         logo_lay.addWidget(ver)
@@ -135,7 +135,7 @@ class MainWindow(QMainWindow):
         # ── Status bar ────────────────────────────────────────────────
         self._status_bar = QStatusBar()
         self.setStatusBar(self._status_bar)
-        self._status_lbl = QLabel("Furaya v5.5  |  Ready")
+        self._status_lbl = QLabel("Furaya v6.0  |  Ready")
         self._status_lbl.setStyleSheet("color: #304050; padding: 0 8px;")
         self._status_bar.addPermanentWidget(self._status_lbl)
 

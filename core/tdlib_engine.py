@@ -1,17 +1,19 @@
 """
 core/tdlib_engine.py — Furaya v5.5
-Fixed TDLib auth state machine using correct pytdbot API.
+Correct pytdbot API usage: update objects have attributes, not .get() dict access.
 """
 
 import asyncio
 import logging
 import os
+import shutil
 import sys
-import traceback
+import traceback as _traceback
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Callable
+from typing import Optional, Dict, List, Callable
 
 logger = logging.getLogger(__name__)
+
 
 # ─── DLL loader (Windows) ─────────────────────────────────────────────────────
 
@@ -28,6 +30,47 @@ def _load_tdjson_dll(dll_path: Path) -> Optional[str]:
     except Exception as e:
         logger.warning(f"add_dll_directory failed: {e}")
     return str(dll_path)
+
+
+def _state_type(update) -> str:
+    """
+    Extract the authorization state type string from a pytdbot update object.
+    pytdbot delivers typed objects (not dicts), so we use the class name.
+    Falls back to dict .get() for any future format changes.
+    """
+    # Prefer attribute-based access (pytdbot typed objects)
+    auth_state = getattr(update, "authorization_state", None)
+    if auth_state is not None:
+        return type(auth_state).__name__.lower()
+    # Fallback: dict style (older pytdbot or mocked objects)
+    if isinstance(update, dict):
+        state = update.get("authorization_state", {})
+        if isinstance(state, dict):
+            return state.get("@type", "").lower()
+    return ""
+
+
+def _conn_state_type(update) -> str:
+    """Extract connection state type string."""
+    state = getattr(update, "state", None)
+    if state is not None:
+        return type(state).__name__.lower()
+    if isinstance(update, dict):
+        return update.get("state", {}).get("@type", "Unknown")
+    return "Unknown"
+
+
+def _result_error(result) -> Optional[str]:
+    """Return error message if result is an error, else None."""
+    if result is None:
+        return "No response"
+    # pytdbot typed error objects
+    if hasattr(result, "error") and result.error:
+        return getattr(result, "message", str(result))
+    # dict fallback
+    if isinstance(result, dict) and result.get("@type", "").lower() == "error":
+        return result.get("message", "Unknown error")
+    return None
 
 
 # ─── TDLibEngine ──────────────────────────────────────────────────────────────
@@ -71,13 +114,24 @@ class TDLibEngine:
         self.log_cb(level, f"[{self.phone_number}] {msg}")
         getattr(logger, level.lower(), logger.info)(msg)
 
+    def _get_db_dir(self) -> Path:
+        safe_phone = self.phone_number.replace("+", "").replace(" ", "")
+        return self.database_dir / f"tdlib_{safe_phone}"
+
+    def _wipe_db(self):
+        """Delete stale TDLib database so a fresh one can be created."""
+        db_dir = self._get_db_dir()
+        if db_dir.exists():
+            self._log("WARN", f"Wiping stale TDLib database at {db_dir}")
+            shutil.rmtree(db_dir, ignore_errors=True)
+
     async def start(self) -> bool:
         """Start TDLib client and drive auth to completion. Returns True if authorized."""
         self.database_dir.mkdir(parents=True, exist_ok=True)
 
-        # ── Placeholder credential guard ───────────────────────────────
-        if str(self.api_id) == "12345678" or "abcdef" in self.api_hash.lower():
-            self._log("ERROR", "❌ Placeholder API credentials detected! Get real ones from https://my.telegram.org/apps")
+        # ── Placeholder credential guard ─────────────────────────────────
+        if str(self.api_id) == "12345678" or self.api_hash.lower().startswith("abcdef"):
+            self._log("ERROR", "❌ Placeholder API credentials — get real ones from https://my.telegram.org/apps")
             return False
 
         dll_path_str = _load_tdjson_dll(self.tdlib_dll_path)
@@ -85,64 +139,70 @@ class TDLibEngine:
         try:
             from pytdbot import Client
         except ImportError as e:
-            import traceback
-            self._log("ERROR", f"pytdbot failed to load inside EXE: {e}\n{traceback.format_exc()}")
+            self._log("ERROR", f"pytdbot failed to import: {e}\n{_traceback.format_exc()}")
             return False
 
-        # ── Derive database path (no colons on Windows) ───────────────
-        safe_phone = self.phone_number.replace("+", "").replace(" ", "")
-        db_dir = self.database_dir / f"tdlib_{safe_phone}"
+        db_dir = self._get_db_dir()
         db_dir.mkdir(parents=True, exist_ok=True)
 
-        client_kwargs = dict(
-            api_id=self.api_id,
-            api_hash=self.api_hash,
-            database_encryption_key="furaya_v55",
-            files_directory=str(db_dir / "files"),
-        )
-        if dll_path_str:
-            client_kwargs["lib_path"] = dll_path_str
+        def _build_client():
+            kwargs = dict(
+                api_id=self.api_id,
+                api_hash=self.api_hash,
+                database_encryption_key="furaya_v55",
+                files_directory=str(db_dir / "files"),
+            )
+            if dll_path_str:
+                kwargs["lib_path"] = dll_path_str
+            return Client(**kwargs)
 
         try:
-            self.client = Client(**client_kwargs)
+            self.client = _build_client()
         except Exception as e:
             self._log("ERROR", f"Failed to create TDLib client: {e}")
             return False
 
-        # ── Auth handler ───────────────────────────────────────────────
+        # ── Auth handler ─────────────────────────────────────────────────
+        # NOTE: pytdbot passes typed update objects, NOT dicts.
+        # Use _state_type() helper which reads class name via type(obj).__name__
         @self.client.on_updateAuthorizationState()
         async def _on_auth(client, update):
             try:
-                state = update.get("authorization_state", {})
-                state_type = state.get("@type", "").lower()
-                self._log("INFO", f"Auth state: {state_type}")
+                stype = _state_type(update)
+                self._log("INFO", f"Auth state: {stype}")
 
-                if "waittdlibparameters" in state_type:
-                    # pytdbot handles this automatically
+                if "waittdlibparameters" in stype:
+                    # pytdbot handles setTdlibParameters automatically
                     pass
 
-                elif "waitphonenumber" in state_type:
-                    self._log("INFO", f"Sending phone number: {self.phone_number}")
+                elif "waitphonenumber" in stype:
+                    self._log("INFO", f"Sending phone: {self.phone_number}")
                     result = await client.setAuthenticationPhoneNumber(
                         phone_number=self.phone_number
                     )
-                    if isinstance(result, dict) and result.get("@type", "").lower() == "error":
-                        err = result.get("message", "Unknown error")
-                        self._log("ERROR", f"Phone number rejected: {err}")
+                    err = _result_error(result)
+                    if err:
+                        self._log("ERROR", f"Phone rejected: {err}")
                         self._failed = True
                         self._fail_reason = err
                         self._auth_event.set()
 
-                elif "waitcode" in state_type:
+                elif "waitcode" in stype:
                     self._log("INFO", "Waiting for OTP code...")
                     if self.on_otp:
-                        self._otp_future = asyncio.get_event_loop().create_future()
+                        self._otp_future = asyncio.get_running_loop().create_future()
                         await self.on_otp(self.phone_number)
                         try:
                             code = await asyncio.wait_for(self._otp_future, timeout=300.0)
-                            result = await client.checkAuthenticationCode(code=str(code))
-                            if isinstance(result, dict) and result.get("@type", "").lower() == "error":
-                                err = result.get("message", "Unknown error")
+                            if not code:
+                                self._log("ERROR", "OTP dialog cancelled")
+                                self._failed = True
+                                self._fail_reason = "OTP cancelled"
+                                self._auth_event.set()
+                                return
+                            result = await client.checkAuthenticationCode(code=str(code).strip())
+                            err = _result_error(result)
+                            if err:
                                 self._log("ERROR", f"OTP rejected: {err}")
                                 self._failed = True
                                 self._fail_reason = err
@@ -157,16 +217,22 @@ class TDLibEngine:
                         self._failed = True
                         self._auth_event.set()
 
-                elif "waitpassword" in state_type:
+                elif "waitpassword" in stype:
                     self._log("INFO", "Waiting for 2FA password...")
                     if self.on_2fa:
-                        self._2fa_future = asyncio.get_event_loop().create_future()
+                        self._2fa_future = asyncio.get_running_loop().create_future()
                         await self.on_2fa(self.phone_number)
                         try:
                             pwd = await asyncio.wait_for(self._2fa_future, timeout=300.0)
+                            if not pwd:
+                                self._log("ERROR", "2FA dialog cancelled")
+                                self._failed = True
+                                self._fail_reason = "2FA cancelled"
+                                self._auth_event.set()
+                                return
                             result = await client.checkAuthenticationPassword(password=str(pwd))
-                            if isinstance(result, dict) and result.get("@type", "").lower() == "error":
-                                err = result.get("message", "Unknown error")
+                            err = _result_error(result)
+                            if err:
                                 self._log("ERROR", f"2FA rejected: {err}")
                                 self._failed = True
                                 self._fail_reason = err
@@ -181,42 +247,60 @@ class TDLibEngine:
                         self._failed = True
                         self._auth_event.set()
 
-                elif "ready" in state_type:
+                elif "ready" in stype:
                     self._authorized = True
                     self._log("INFO", "✅ Authorized successfully!")
                     self._auth_event.set()
 
-                elif "closed" in state_type or "closepending" in state_type:
+                elif "closing" in stype or "closed" in stype:
                     if not self._authorized:
                         self._log("WARN", "TDLib closed before authorization")
                         self._failed = True
                         self._auth_event.set()
 
             except Exception as ex:
-                self._log("ERROR", f"Auth handler exception: {ex}\n{traceback.format_exc()}")
+                self._log("ERROR", f"Auth handler exception: {ex}\n{_traceback.format_exc()}")
                 self._failed = True
                 self._auth_event.set()
 
-        # ── Connection state tracking ──────────────────────────────────
+        # ── Connection state tracking ─────────────────────────────────────
         @self.client.on_updateConnectionState()
         async def _on_conn(client, update):
             try:
-                state = update.get("state", {}).get("@type", "Unknown")
-                self._connection_state = state
-                self._log("INFO", f"Connection: {state}")
+                stype = _conn_state_type(update)
+                self._connection_state = stype
+                self._log("INFO", f"Connection: {stype}")
             except Exception:
                 pass
 
-        # ── Start client (non-blocking) ────────────────────────────────
+        # ── Start client (non-blocking, no auto-login) ───────────────────
         try:
             self._log("INFO", "Starting TDLib client...")
             await self.client.start(wait_login=False)
         except Exception as e:
-            self._log("ERROR", f"client.start() failed: {e}\n{traceback.format_exc()}")
-            return False
+            err_txt = str(e)
+            self._log("ERROR", f"client.start() failed: {err_txt}")
+            # Wrong DB encryption key → wipe and retry once
+            if "Wrong database encryption key" in err_txt or "encryption" in err_txt.lower():
+                self._log("WARN", "Encryption key mismatch — wiping DB and retrying...")
+                await self._safe_stop()
+                self._wipe_db()
+                db_dir.mkdir(parents=True, exist_ok=True)
+                try:
+                    self.client = _build_client()
+                    # Re-register handlers
+                    self.client.on_updateAuthorizationState()(_on_auth.__wrapped__ if hasattr(_on_auth, "__wrapped__") else _on_auth)
+                    self.client.on_updateConnectionState()(_on_conn.__wrapped__ if hasattr(_on_conn, "__wrapped__") else _on_conn)
+                    await self.client.start(wait_login=False)
+                    self._log("INFO", "Retry after DB wipe succeeded")
+                except Exception as e2:
+                    self._log("ERROR", f"Retry after wipe also failed: {e2}")
+                    return False
+            else:
+                return False
 
-        # ── Wait for auth with connection heartbeat ────────────────────
-        start_time = asyncio.get_event_loop().time()
+        # ── Wait for auth with connection heartbeat ───────────────────────
+        start_time = asyncio.get_running_loop().time()
         timeout = 120.0
 
         while not self._auth_event.is_set():
@@ -226,36 +310,48 @@ class TDLibEngine:
                     timeout=15.0
                 )
             except asyncio.TimeoutError:
-                elapsed = asyncio.get_event_loop().time() - start_time
+                elapsed = asyncio.get_running_loop().time() - start_time
                 if elapsed >= timeout:
                     self._log("ERROR", f"Login timeout after {timeout}s")
                     break
-                if "Connecting" in self._connection_state:
-                    self._log("WARN", f"⏳ Still connecting... ({elapsed:.0f}s elapsed)")
-                elif "WaitingForNetwork" in self._connection_state:
-                    self._log("ERROR", "❌ No network — check your internet connection")
+                if "connectingtoproxy" in self._connection_state or "connecting" in self._connection_state:
+                    self._log("WARN", f"⏳ Still connecting... ({elapsed:.0f}s)")
+                elif "waitingfornetwork" in self._connection_state:
+                    self._log("ERROR", "❌ No network — check internet connection")
                     break
                 else:
                     self._log("INFO", f"⏳ Waiting for Telegram... ({elapsed:.0f}s)")
 
         return self._authorized
 
-    # ── Public helpers for GUI submissions ─────────────────────────────
+    async def _safe_stop(self):
+        """Stop client ignoring errors."""
+        if self.client:
+            try:
+                await self.client.stop()
+            except Exception:
+                pass
+            self.client = None
+
+    # ── Public helpers for GUI submissions ────────────────────────────────
 
     def submit_otp(self, code: str):
         """Called by GUI when user enters OTP."""
         if self._otp_future and not self._otp_future.done():
             self._otp_future.set_result(code.strip())
+        else:
+            self._log("WARN", "submit_otp called but no pending OTP future")
 
     def submit_2fa(self, password: str):
         """Called by GUI when user enters 2FA password."""
         if self._2fa_future and not self._2fa_future.done():
             self._2fa_future.set_result(password)
+        else:
+            self._log("WARN", "submit_2fa called but no pending 2FA future")
 
-    # ── Messaging ─────────────────────────────────────────────────────
+    # ── Messaging ─────────────────────────────────────────────────────────
 
     async def send_message(self, chat_id: int, text: str) -> bool:
-        """Send plain text message to a chat. Returns True on success."""
         if not self.client or not self._authorized:
             return False
         try:
@@ -266,15 +362,14 @@ class TDLibEngine:
                     text=td_types.FormattedText(text=text, entities=[])
                 )
             )
-            return not (hasattr(result, "error") and result.error)
+            return _result_error(result) is None
         except Exception as e:
             self._log("ERROR", f"send_message failed: {e}")
             return False
 
-    # ── Group discovery & joining ──────────────────────────────────────
+    # ── Group discovery & joining ─────────────────────────────────────────
 
     async def search_groups(self, keyword: str, limit: int = 30) -> List[Dict]:
-        """Search public Telegram groups/channels by keyword."""
         if not self.client or not self._authorized:
             return []
         try:
@@ -291,10 +386,9 @@ class TDLibEngine:
             return []
 
     async def get_chat_info(self, chat_id: int) -> Optional[Dict]:
-        """Get basic info about a chat."""
         try:
             result = await self.client.getChat(chat_id=chat_id)
-            if hasattr(result, "error") and result.error:
+            if _result_error(result):
                 return None
             return {
                 "id": result.id,
@@ -307,30 +401,28 @@ class TDLibEngine:
             return None
 
     async def join_chat(self, identifier: str) -> bool:
-        """Join a public chat by username or invite link."""
         if not self.client or not self._authorized:
             return False
         try:
-            if identifier.startswith("https://t.me/+") or identifier.startswith("https://t.me/joinchat"):
+            if identifier.startswith("https://t.me/+") or "joinchat" in identifier:
                 result = await self.client.joinChatByInviteLink(invite_link=identifier)
             else:
                 username = identifier.lstrip("@")
                 chat = await self.client.searchPublicChat(username=username)
-                if hasattr(chat, "error") and chat.error:
+                if _result_error(chat):
                     return False
                 result = await self.client.joinChat(chat_id=chat.id)
-            return not (hasattr(result, "error") and result.error)
+            return _result_error(result) is None
         except Exception as e:
             self._log("ERROR", f"join_chat({identifier}) failed: {e}")
             return False
 
     async def get_me(self) -> Optional[Dict]:
-        """Get the current user info."""
         if not self.client:
             return None
         try:
             me = await self.client.getMe()
-            if hasattr(me, "error") and me.error:
+            if _result_error(me):
                 return None
             return {
                 "id": me.id,
@@ -343,10 +435,5 @@ class TDLibEngine:
 
     async def stop(self):
         """Gracefully close the TDLib client."""
-        if self.client:
-            try:
-                await self.client.stop()
-            except Exception:
-                pass
-            self.client = None
+        await self._safe_stop()
         self._authorized = False

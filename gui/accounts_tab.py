@@ -207,6 +207,7 @@ class AccountsTab(QWidget):
         self._refresh_table()
 
         # Wire OTP/2FA providers into account manager
+        # Each provider receives (phone, engine) and must call engine.submit_otp/2fa
         self._accounts.otp_provider = self._provide_otp
         self._accounts.tfa_provider = self._provide_2fa
 
@@ -386,33 +387,72 @@ class AccountsTab(QWidget):
     # ── OTP / 2FA providers ────────────────────────────────────────────
 
     async def _provide_otp(self, phone: str):
-        """Show OTP dialog without blocking the event loop."""
-        loop = asyncio.get_event_loop()
+        """Show OTP dialog and feed the code into the waiting engine via engine.submit_otp."""
+        loop = asyncio.get_running_loop()
         future = loop.create_future()
 
         def _show():
             dlg = OTPDialog(phone, self)
-            dlg.submitted.connect(lambda code: loop.call_soon_threadsafe(future.set_result, code))
-            dlg.rejected.connect(lambda: loop.call_soon_threadsafe(
-                future.set_result, "") if not future.done() else None)
+
+            def _on_submit(code):
+                if not future.done():
+                    loop.call_soon_threadsafe(future.set_result, code)
+
+            def _on_cancel():
+                if not future.done():
+                    loop.call_soon_threadsafe(future.set_result, "")
+
+            dlg.submitted.connect(_on_submit)
+            dlg.rejected.connect(_on_cancel)
             dlg.exec_()
 
         from PyQt5.QtCore import QTimer
         QTimer.singleShot(0, _show)
-        await future
+
+        code = await future
+        if code:
+            # Submit the code back to the engine that requested it
+            engine = self._get_engine_for_phone(phone)
+            if engine:
+                engine.submit_otp(code)
 
     async def _provide_2fa(self, phone: str):
-        """Show 2FA dialog without blocking the event loop."""
-        loop = asyncio.get_event_loop()
+        """Show 2FA dialog and feed the password into the waiting engine via engine.submit_2fa."""
+        loop = asyncio.get_running_loop()
         future = loop.create_future()
 
         def _show():
             dlg = TwoFADialog(phone, self)
-            dlg.submitted.connect(lambda pwd: loop.call_soon_threadsafe(future.set_result, pwd))
-            dlg.rejected.connect(lambda: loop.call_soon_threadsafe(
-                future.set_result, "") if not future.done() else None)
+
+            def _on_submit(pwd):
+                if not future.done():
+                    loop.call_soon_threadsafe(future.set_result, pwd)
+
+            def _on_cancel():
+                if not future.done():
+                    loop.call_soon_threadsafe(future.set_result, "")
+
+            dlg.submitted.connect(_on_submit)
+            dlg.rejected.connect(_on_cancel)
             dlg.exec_()
 
         from PyQt5.QtCore import QTimer
         QTimer.singleShot(0, _show)
-        await future
+
+        password = await future
+        if password:
+            engine = self._get_engine_for_phone(phone)
+            if engine:
+                engine.submit_2fa(password)
+
+    def _get_engine_for_phone(self, phone: str):
+        """Find the engine currently logging in for this phone number."""
+        for acc in self._accounts.get_all():
+            if acc.get("phone") == phone:
+                engine = acc.get("engine")
+                if engine:
+                    return engine
+                # Engine may not be stored yet during login — check connecting status
+                # The engine is stored in account_manager _current_engines temporarily
+        # Fallback: look in account manager's _active_login_engine
+        return getattr(self._accounts, "_active_login_engine", None)

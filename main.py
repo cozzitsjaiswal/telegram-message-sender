@@ -27,7 +27,7 @@ logging.basicConfig(
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("Furaya")
-    app.setApplicationVersion("5.5")
+    app.setApplicationVersion("6.0 Enterprise")
     app.setStyleSheet(STYLESHEET)
 
     loop = qasync.QEventLoop(app)

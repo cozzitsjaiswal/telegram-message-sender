@@ -27,7 +27,8 @@ class AccountManager:
         self.log_cb = log_cb or (lambda level, msg: logger.info(msg))
         self.accounts_file = self.data_path / "accounts.json"
         self.accounts: List[Dict] = []
-        self._login_lock = asyncio.Lock()
+        self._login_lock: Optional[asyncio.Lock] = None  # created lazily in async context
+        self._active_login_engine: Optional["TDLibEngine"] = None  # set during login
 
         # These are set by MainWindow for OTP/2FA dialogs
         self.otp_provider: Optional[Callable] = None
@@ -118,6 +119,10 @@ class AccountManager:
         if acc.get("engine") and acc.get("status") == "connected":
             return True  # Already connected
 
+        # Create lock lazily so it binds to the current (qasync) event loop
+        if self._login_lock is None:
+            self._login_lock = asyncio.Lock()
+
         async with self._login_lock:
             acc["status"] = "connecting"
             self._log("INFO", f"🔌 Logging in {acc['phone']}...")
@@ -133,11 +138,16 @@ class AccountManager:
                 log_cb=self.log_cb,
             )
 
+            # Make engine reachable DURING login so OTP/2FA bridge can find it
+            self._active_login_engine = engine
+
             try:
                 success = await engine.start()
             except Exception as e:
                 self._log("ERROR", f"Login exception for {acc['phone']}: {e}")
                 success = False
+            finally:
+                self._active_login_engine = None
 
             if success:
                 acc["engine"] = engine
@@ -163,6 +173,17 @@ class AccountManager:
         return connected
 
     # ── Engine access ──────────────────────────────────────────────────
+
+    def get_by_phone(self, phone: str) -> Optional[Dict]:
+        """Find an account by phone number."""
+        # Normalize phone
+        phone = phone.strip()
+        if not phone.startswith("+"):
+            phone = "+" + phone
+        for acc in self.accounts:
+            if acc["phone"] == phone:
+                return acc
+        return None
 
     def get_engine(self, index: int) -> Optional[TDLibEngine]:
         if 0 <= index < len(self.accounts):

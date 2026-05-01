@@ -482,17 +482,18 @@ class AutoPilotTab(QWidget):
         for row, acc in enumerate(all_acc):
             self._acc_table.setItem(row, 0, QTableWidgetItem(acc.get("phone")))
 
+            status = acc.get("status", "disconnected")
             if acc.get('engine'):
                 s_text = "✅ Online"
                 s_color = "#40d060"
-            elif acc.status.value == "flood":
-                s_text = f"⏳ Flood ({acc.flood_remaining}s)"
+            elif status == "flood":
+                s_text = f"⏳ Flood"
                 s_color = "#d0a020"
-            elif acc.status.value == "banned":
+            elif status == "banned":
                 s_text = "🚫 Banned"
                 s_color = "#e05050"
             else:
-                s_text = "❌ Offline"
+                s_text = f"○ {status.capitalize()}"
                 s_color = "#606080"
 
             si = QTableWidgetItem(s_text)
