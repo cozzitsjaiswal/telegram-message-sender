@@ -8,12 +8,18 @@
 #   5. Create a Start Menu shortcut
 #   6. Open the app
 
+param(
+    [string]$SourceDir = $null
+)
+
+if (-not $SourceDir) {
+    $SourceDir = Join-Path $PSScriptRoot "dist\FurayaPromoEngine_v5.5_Enterprise"
+}
+
 $ErrorActionPreference = 'Stop'
 $AppName    = "Furaya Promo Engine"
 $InstallDir = "C:\FurayaPromoEngine"
 $DataDir    = "$InstallDir\data"
-$ExeName    = "FurayaPromoEngine.exe"
-$ExeSrc     = Join-Path $PSScriptRoot $ExeName
 
 # ── 1. Create directories ──────────────────────────────────────────────────────
 Write-Host "`n[1/5] Creating installation directory..."
@@ -22,16 +28,24 @@ New-Item -ItemType Directory -Path $DataDir    -Force | Out-Null
 Write-Host "      $InstallDir  OK"
 Write-Host "      $DataDir  OK"
 
-# ── 2. Copy EXE ────────────────────────────────────────────────────────────────
-Write-Host "[2/5] Copying application..."
-if (-not (Test-Path $ExeSrc)) {
-    Write-Host "ERROR: Cannot find $ExeName next to this installer." -ForegroundColor Red
-    Write-Host "       Make sure installer.ps1 and $ExeName are in the same folder."
+# ── 2. Copy application files ─────────────────────────────────────────────────
+Write-Host "[2/5] Copying application from $SourceDir..."
+if (-not (Test-Path $SourceDir)) {
+    Write-Host "ERROR: Source directory not found: $SourceDir" -ForegroundColor Red
     pause; exit 1
 }
-Copy-Item $ExeSrc "$InstallDir\$ExeName" -Force
-$sizeMB = [Math]::Round((Get-Item "$InstallDir\$ExeName").Length / 1MB, 1)
-Write-Host "      Installed ($sizeMB MB)  OK"
+# Copy all files (EXE, DLLs, etc.) from source to install directory, excluding the installer itself
+Copy-Item -Path "$SourceDir\*" -Exclude "installer.ps1" -Destination $InstallDir -Recurse -Force
+
+# Locate the main executable
+$Exe = Get-ChildItem -Path $InstallDir -Filter "FurayaPromoEngine*.exe" | Select-Object -First 1
+if (-not $Exe) {
+    Write-Host "ERROR: Could not find FurayaPromoEngine*.exe in $InstallDir after copy." -ForegroundColor Red
+    pause; exit 1
+}
+$ExeName = $Exe.Name
+$sizeMB = [Math]::Round($Exe.Length / 1MB, 1)
+Write-Host "      Installed ($ExeName, $sizeMB MB)  OK"
 
 # ── 3. Desktop shortcut ────────────────────────────────────────────────────────
 Write-Host "[3/5] Creating Desktop shortcut..."

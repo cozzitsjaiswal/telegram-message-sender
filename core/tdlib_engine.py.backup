@@ -14,45 +14,6 @@ from typing import Optional, Dict, List, Callable
 
 logger = logging.getLogger(__name__)
 
-_pytdbot_types_patch_done = False
-
-
-def _patch_pytdbot_types():
-    """Patch pytdbot.types to handle unknown TDLib types gracefully."""
-    global _pytdbot_types_patch_done
-    if _pytdbot_types_patch_done:
-        return
-
-    try:
-        import pytdbot.types as _types
-
-        _original_getattr = getattr(_types, '__getattr__', None)
-
-        def _safe_getattr(name):
-            try:
-                if _original_getattr:
-                    return _original_getattr(name)
-            except Exception:
-                pass
-            from dataclasses import dataclass
-
-            @dataclass(frozen=True)
-            class _UnknownType:
-                """Dynamic placeholder for unknown TDLib types."""
-
-                @classmethod
-                def from_dict(cls, data):
-                    return data
-
-            _UnknownType.__name__ = name
-            return _UnknownType
-
-        _types.__getattr__ = _safe_getattr
-
-        _pytdbot_types_patch_done = True
-    except ImportError:
-        pass
-
 
 # ─── DLL loader (Windows) ─────────────────────────────────────────────────────
 
@@ -168,7 +129,6 @@ class TDLibEngine:
 
     async def start(self) -> bool:
         """Start TDLib client and drive auth to completion. Returns True if authorized."""
-        _patch_pytdbot_types()
         self.database_dir.mkdir(parents=True, exist_ok=True)
 
         # ── Placeholder credential guard ─────────────────────────────────

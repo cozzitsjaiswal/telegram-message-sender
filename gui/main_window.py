@@ -1,7 +1,9 @@
 """
-gui/main_window.py — Furaya v5.5
-Simplified pipeline-focused layout. 6 tabs, clean sidebar.
+gui/main_window.py — Furaya v6.0 Enterprise
+Full-featured layout: 7 tabs across sidebar — AutoPilot, Accounts,
+Discovery, Messenger, Analytics, Groups, Logs.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -11,9 +13,16 @@ from pathlib import Path
 
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import (
-    QHBoxLayout, QLabel, QMainWindow, QPushButton,
-    QSizePolicy, QStackedWidget, QStatusBar, QVBoxLayout,
-    QWidget, QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QPushButton,
+    QSizePolicy,
+    QStackedWidget,
+    QStatusBar,
+    QVBoxLayout,
+    QWidget,
+    QFrame,
 )
 
 from core.account_manager import AccountManager
@@ -29,34 +38,48 @@ logger = logging.getLogger(__name__)
 def _make_sep():
     f = QFrame()
     f.setFrameShape(QFrame.HLine)
-    f.setStyleSheet("border: none; border-top: 1px solid rgba(0,212,255,0.06); margin: 4px 16px;")
+    f.setStyleSheet(
+        "border: none; border-top: 1px solid rgba(0,212,255,0.10); margin: 4px 12px;"
+    )
     return f
+
+
+NAV_ITEMS_META = [
+    ("🤖", "AutoPilot",  "Pipeline control"),
+    ("👤", "Accounts",   "Manage accounts"),
+    ("📊", "Analytics",  "Stats & metrics"),
+    ("🔍", "Discovery",  "Group finder"),
+    ("💬", "Messenger",  "Send messages"),
+    ("👥", "Groups",     "Joined groups"),
+    ("📋", "Logs",       "System logs"),
+]
 
 
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Furaya — Autonomous Campaign System v6.0 Enterprise")
-        self.setMinimumSize(1050, 680)
-        self.resize(1280, 820)
+        self.setMinimumSize(1150, 740)
+        self.resize(1400, 900)
 
-        self.app_dir = Path.home() / "FurayaPromoEngine"
-        self.app_dir.mkdir(parents=True, exist_ok=True)
-
-        # ── Resolve tdjson.dll ──────────────────────────────────────────
+        # ── Paths ───────────────────────────────────────────────────────
         if getattr(sys, "frozen", False):
-            base_path = Path(sys._MEIPASS)
+            self._resource_path = Path(sys._MEIPASS)
+            self._install_dir   = Path(sys.executable).parent
         else:
-            base_path = Path(__file__).parent.parent
-        self.tdlib_dll = base_path / "tdjson.dll"
+            self._resource_path = Path(__file__).parent.parent
+            self._install_dir   = self._resource_path
+
+        self.tdlib_dll = self._resource_path / "tdjson.dll"
+        self.app_dir   = self._install_dir / "data"
+        self.app_dir.mkdir(parents=True, exist_ok=True)
 
         # ── Core managers ───────────────────────────────────────────────
         self._accounts = AccountManager(
-            data_path=self.app_dir / "data",
+            data_path=self.app_dir,
             tdlib_dll_path=self.tdlib_dll,
             log_cb=self._on_log,
         )
-
         self._pipeline = PromoPipeline(
             account_manager=self._accounts,
             log_cb=self._on_log,
@@ -86,7 +109,7 @@ class MainWindow(QMainWindow):
         # Logo block
         logo_w = QWidget()
         logo_lay = QVBoxLayout(logo_w)
-        logo_lay.setContentsMargins(20, 24, 20, 16)
+        logo_lay.setContentsMargins(18, 22, 18, 14)
         logo_lay.setSpacing(2)
         logo = QLabel("FURAYA")
         logo.setObjectName("logo_label")
@@ -97,19 +120,16 @@ class MainWindow(QMainWindow):
         sb_lay.addWidget(logo_w)
         sb_lay.addWidget(_make_sep())
 
-        # Navigation
+        # Navigation tabs
         self._stack = QStackedWidget()
-        nav_items = [
-            ("🤖", "AutoPilot", self._make_pipeline()),
-            ("👤", "Accounts", self._make_accounts()),
-            ("📋", "Logs", self._make_logs()),
-        ]
+        widgets = self._build_tabs()
 
         self._nav_buttons: list[QPushButton] = []
-        for i, (icon, label, widget) in enumerate(nav_items):
+        for i, ((icon, label, hint), widget) in enumerate(zip(NAV_ITEMS_META, widgets)):
             btn = QPushButton(f"  {icon}  {label}")
             btn.setObjectName("sidebar_btn")
-            btn.setFixedHeight(44)
+            btn.setFixedHeight(46)
+            btn.setToolTip(hint)
             btn.clicked.connect(lambda _, idx=i: self._switch(idx))
             sb_lay.addWidget(btn)
             self._nav_buttons.append(btn)
@@ -118,15 +138,19 @@ class MainWindow(QMainWindow):
         sb_lay.addStretch()
         sb_lay.addWidget(_make_sep())
 
-        # System status in sidebar
-        self._pipeline_status = QLabel("○  Idle")
+        # Pipeline status dot
+        self._pipeline_status = QLabel("●  Idle")
         self._pipeline_status.setObjectName("status_dot")
-        self._pipeline_status.setStyleSheet("color: #304050; padding: 10px 20px; font-size: 11px;")
+        self._pipeline_status.setStyleSheet(
+            "color: #304050; padding: 8px 18px; font-size: 11px;"
+        )
         sb_lay.addWidget(self._pipeline_status)
 
-        # Account count
-        self._acct_count = QLabel("0 accounts")
-        self._acct_count.setStyleSheet("color: #202a35; padding: 0 20px 16px 20px; font-size: 10px;")
+        # Account count badge
+        self._acct_count = QLabel("0/0 accounts")
+        self._acct_count.setStyleSheet(
+            "color: #2a3a4a; padding: 2px 18px 16px 18px; font-size: 10px;"
+        )
         sb_lay.addWidget(self._acct_count)
 
         root_lay.addWidget(sidebar)
@@ -136,16 +160,77 @@ class MainWindow(QMainWindow):
         self._status_bar = QStatusBar()
         self.setStatusBar(self._status_bar)
         self._status_lbl = QLabel("Furaya v6.0  |  Ready")
-        self._status_lbl.setStyleSheet("color: #304050; padding: 0 8px;")
+        self._status_lbl.setStyleSheet("color: #506070; padding: 0 8px;")
         self._status_bar.addPermanentWidget(self._status_lbl)
 
-        # Start on Pipeline tab
         self._switch(0)
 
-        # Refresh sidebar status every 2s
+        # Sidebar refresh timer
         self._sidebar_timer = QTimer()
         self._sidebar_timer.timeout.connect(self._refresh_sidebar)
         self._sidebar_timer.start(2000)
+
+    def _build_tabs(self) -> list:
+        """Build all tab widgets. Returns list matching NAV_ITEMS_META order."""
+        # AutoPilot (0)
+        self._pipeline_tab = PipelineTab(self._accounts, self._pipeline)
+        self._pipeline_tab.log_requested.connect(self._on_log)
+
+        # Accounts (1)
+        self._accounts_tab = AccountsTab(self._accounts)
+        self._accounts_tab.accounts_changed.connect(self._on_accounts_changed)
+
+        # Analytics (2) — use dashboard stub if full tab missing
+        analytics = self._try_import_tab("gui.analytics_tab", "AnalyticsTab",
+                                          self._accounts, self._pipeline)
+
+        # Discovery (3)
+        discovery = self._try_import_tab("gui.discovery_tab", "DiscoveryTab",
+                                          self._accounts)
+
+        # Messenger (4)
+        messenger = self._try_import_tab("gui.messenger_tab", "MessengerTab",
+                                          self._accounts)
+
+        # Groups (5)
+        groups = self._try_import_tab("gui.groups_tab", "GroupsTab",
+                                       self._accounts)
+
+        # Logs (6)
+        self._logs_tab = LogsTab()
+
+        return [
+            self._pipeline_tab,
+            self._accounts_tab,
+            analytics,
+            discovery,
+            messenger,
+            groups,
+            self._logs_tab,
+        ]
+
+    def _try_import_tab(self, module: str, klass: str, *args) -> QWidget:
+        """Try to import a tab class; fall back to a placeholder if missing."""
+        try:
+            import importlib
+            mod = importlib.import_module(module)
+            cls = getattr(mod, klass)
+            return cls(*args)
+        except Exception as e:
+            logger.warning(f"Could not load {module}.{klass}: {e}")
+            return self._placeholder(klass.replace("Tab", "").replace("_", " "))
+
+    def _placeholder(self, name: str) -> QWidget:
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setAlignment(Qt.AlignCenter)
+        lbl = QLabel(f"⚙  {name}\nComing soon")
+        lbl.setAlignment(Qt.AlignCenter)
+        lbl.setStyleSheet(
+            "color: #304050; font-size: 18px; font-weight: 600; line-height: 2;"
+        )
+        lay.addWidget(lbl)
+        return w
 
     def _switch(self, idx: int) -> None:
         self._stack.setCurrentIndex(idx)
@@ -153,22 +238,6 @@ class MainWindow(QMainWindow):
             btn.setProperty("active", "true" if i == idx else "false")
             btn.style().unpolish(btn)
             btn.style().polish(btn)
-
-    # ── Tab factories ─────────────────────────────────────────────────
-
-    def _make_pipeline(self) -> QWidget:
-        self._pipeline_tab = PipelineTab(self._accounts, self._pipeline)
-        self._pipeline_tab.log_requested.connect(self._on_log)
-        return self._pipeline_tab
-
-    def _make_accounts(self) -> QWidget:
-        self._accounts_tab = AccountsTab(self._accounts)
-        self._accounts_tab.accounts_changed.connect(self._on_accounts_changed)
-        return self._accounts_tab
-
-    def _make_logs(self) -> QWidget:
-        self._logs_tab = LogsTab()
-        return self._logs_tab
 
     # ── Callbacks ─────────────────────────────────────────────────────
 
@@ -179,28 +248,28 @@ class MainWindow(QMainWindow):
             pass
 
     def _on_metrics(self, m: dict) -> None:
-        sent = m.get("sent", 0)
+        sent   = m.get("sent", 0)
         joined = m.get("joined", 0)
-        found = m.get("discovered", 0)
-        phase = m.get("phase", "Idle")
+        found  = m.get("discovered", 0)
+        phase  = m.get("phase", "Idle")
         self._status_lbl.setText(
-            f"Phase: {phase}  |  Found: {found}  |  Joined: {joined}  |  Sent: {sent}"
+            f"Phase: {phase}  │  Found: {found}  │  Joined: {joined}  │  Sent: {sent}"
         )
 
     def _on_pipeline_status(self, phase: str) -> None:
         colors = {
-            "Discovering Groups": "#00d4ff",
-            "Joining Groups": "#ffd700",
-            "Sending Promotions": "#00ff88",
-            "Done": "#00ff88",
-            "Error": "#ff3366",
-            "Idle": "#304050",
+            "Discovering Groups":  "#00d4ff",
+            "Joining Groups":      "#ffd700",
+            "Sending Promotions":  "#00ff88",
+            "Done":   "#00ff88",
+            "Error":  "#ff3366",
+            "Idle":   "#304050",
             "Paused": "#ffd700",
         }
         color = colors.get(phase, "#304050")
         self._pipeline_status.setText(f"●  {phase}")
         self._pipeline_status.setStyleSheet(
-            f"color: {color}; padding: 10px 20px; font-size: 11px; font-weight: 700;"
+            f"color: {color}; padding: 8px 18px; font-size: 11px; font-weight: 700;"
         )
 
     def _on_accounts_changed(self) -> None:
@@ -210,8 +279,10 @@ class MainWindow(QMainWindow):
         n = self._accounts.logged_in_count
         t = self._accounts.total_count
         self._acct_count.setText(f"{n}/{t} accounts connected")
-        col = "#00ff88" if n > 0 else "#304050"
-        self._acct_count.setStyleSheet(f"color: {col}; padding: 0 20px 16px 20px; font-size: 10px;")
+        col = "#00ff88" if n > 0 else "#2a3a4a"
+        self._acct_count.setStyleSheet(
+            f"color: {col}; padding: 2px 18px 16px 18px; font-size: 10px;"
+        )
 
     # ── Close ─────────────────────────────────────────────────────────
 
